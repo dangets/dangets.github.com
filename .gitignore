@@ -1,0 +1,25 @@
+.*.swp
+.*.swo
+
+a.out
+*.o
+
+# python
+*.pyc
+*.pyo
+
+# java
+*.class
+
+# go
+6.out
+go/**/*.6
+go/*.6
+
+autom4te.cache
+
+.*.dblite
+
+# ignore .mod files within fortran directory
+fortran/**/*.mod
+fortran/*.mod
