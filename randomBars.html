@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>D3 experiment</title>
+        <script type="text/javascript" src="d3/d3.v2.js"></script>
+    </head>
+
+    <body>
+        <div id="vis">
+        </div>
+
+        <script type="text/javascript">
+            function randomColor() {
+                // kudos to: http://paulirish.com/2009/random-hex-color-code-snippets/
+                // some tricks going on here:
+                //  the << 0 is converting the random float to an int
+                //  the '00000' and .substr(-6) is left padding  the result with zeros to a total length of 6
+                var hexColor = '#'+('00000'+(Math.random()*0xffffff<<0).toString(16)).substr(-6);
+                return hexColor;
+            }
+
+
+            var _curID = 0;
+            function next() {
+                return {
+                    label: _curID++,
+                    value: Math.random() * 50,
+                };
+            }
+
+            // initialize data with 10 elements
+            var data = d3.range(10).map(next);
+
+            console.debug(data);
+
+            var totalWidth = 600;
+            var totalHeight = 500;
+            var barVMargin = 5;
+
+            var xScale = d3.scale.linear()
+                    .domain([0, 50])
+                    .rangeRound([0, totalWidth]);
+
+            var yScale = d3.scale.ordinal()
+                    .domain(data.map(function(d) { return d.label; }))
+                    .rangeBands([0, totalHeight]);
+
+            var barHeight = Math.floor(totalHeight / data.length) - barVMargin;
+            console.debug(barHeight);
+
+            var chart = d3.select("#vis")
+                .append("svg")
+                .attr("class", "chart")
+                .attr("width", totalWidth)
+                .attr("height", totalHeight)
+                .append("g")
+                .attr("transform", "translate(10, 0)");
+
+
+            function draw() {
+                var xMax = d3.max(data.map(function(d) { return d.value; }));
+                xScale.domain([0, xMax]);
+                yScale.domain(data.map(function(d) { return d.label; }));
+                barHeight = Math.floor(totalHeight / data.length) - barVMargin;
+
+                var bars = chart.selectAll("rect")
+                    .data(data, function(d) { return d.label; });
+
+                bars.enter()
+                    .append("rect")
+                    .attr("x", 0)
+                    .attr("y",     function(d) { return yScale(d.label); })
+                    .attr("height", barHeight)
+                    .attr("width", 0)
+                    .attr("fill", function(d) { return randomColor(); })
+                    .transition()
+                    .duration(1000)
+                    .attr("width", function(d) { return xScale(d.value); });
+
+                bars.transition()
+                    .duration(1000)
+                    .attr("y",     function(d) { return yScale(d.label); })
+                    .attr("width", function(d) { return xScale(d.value); })
+                    .attr("height", barHeight);
+
+                bars.exit()
+                    .transition()
+                    .duration(1000)
+                    .attr("width", 0)
+                    .remove();
+            }
+
+
+            setInterval(function() {
+                var numElements = Math.floor(Math.random()*8 + 2);
+                //data = d3.range(numElements).map(next);
+
+                var orig_i = 0;
+                var newData = new Array();
+
+                for (var i=0; i<numElements; i++) {
+                    if (data.length == 0 || Math.random() > 0.5) {
+                        newData.push(next());
+                    } else {
+                        newData.push(data.shift())
+                    }
+                }
+                data = newData;
+
+                draw();
+            }, 2000);
+        </script>
+    </body>
+</html>
+
