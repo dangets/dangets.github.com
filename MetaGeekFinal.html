@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style type="text/css">
+            #vis {
+                position: absolute;
+            }
+
+            #vis text {
+                font-family: Helvetica, sans-serif;
+                font-size: 12px;
+            }
+
+            #focus {
+            }
+
+            #context {
+                position: absolute;
+                border-top: 1px solid black;
+                padding-top: 5px;
+                margin-top: 5px;
+            }
+
+            #controls {
+                position: absolute;
+                background: #44accf;
+                border: 1px solid black;
+
+                font-family: Helvetica, sans-serif;
+                font-size: 12px;
+            }
+
+            #controls .centered {
+                text-align: center;
+            }
+
+            #controls #fieldTable {
+                padding: 15px;
+            }
+
+            #focusInfoBox {
+                position: absolute;
+                padding: 10px;
+                background-color: rgba(200, 200, 200, .85);
+                border: 1px solid black;
+
+                font-family: Helvetica, sans-serif;
+                font-size: 12px;
+            }
+
+            #focusInfoBox p {
+                margin: 0;
+                padding: 0;
+            }
+
+            .brush .extent {
+                stroke: #fff;
+                fill-opacity: .25;
+                shape-rendering: crispEdges;
+            }
+
+            .axis path, .axis line {
+                fill: none;
+                stroke: #000;
+                shape-rendering: crispEdges;
+            }
+        </style>
+        <script type="text/javascript" src="http://mbostock.github.com/d3/d3.v2.js"></script>
+        <!--
+        <script type="text/javascript" src="http://mbostock.github.com/d3/d3.v2.js?2.8.1"></script>
+        <script type="text/javascript" src="d3/d3.v2.js"></script>
+        -->
+        <script type="text/javascript" src="dg/dg.js"></script>
+    </head>
+
+    <body>
+        <div id="vis">
+            <div id="focus">
+            </div>
+            <div id="context">
+            </div>
+        </div>
+
+        <div id="controls">
+            Load a new file:
+            <input type="file" id="fileLoad" name="files[]"/>
+            <table id="fieldTable">
+                <thead>
+                    <tr>
+                        <td>Focus</td>
+                        <td>Context</td>
+                        <td>Field Name</td>
+                    </tr>
+                </thead>
+            </table>
+            <table>
+                <tr>
+                    <td>
+                        <input type="checkbox" onClick="onShowInfoBox(this)"/>
+                    </td>
+                    <td> Show info box </td>
+                </tr>
+                <tr>
+                    <td>
+                        <input type="checkbox" checked="yes" onClick="onShowAreaClick(this)"/>
+                    </td>
+                    <td> Show areas </td>
+                </tr>
+                <tr>
+                    <td>
+                        <input type="checkbox" onClick="onShowValueLines(this)"/>
+                    </td>
+                    <td> Show value lines </td>
+                </tr>
+                <tr>
+                    <td>
+                        <input type="checkbox" onClick="onShowZeroLines(this)"/>
+                    </td>
+                    <td> Show zero-value lines </td>
+                </tr>
+            </table>
+        </div>
+
+        <div id="focusInfoBox">
+            <p></p>
+        </div>
+
+        <script type="text/javascript">
+            // compatibility function to add a '.keys' method to Objects
+            // (part of ECMA5)
+            if (!Object.keys) {
+                Object.keys = function (o) {
+                    if (o !== Object(o))
+                        throw new TypeError('Object.keys called on non-object');
+                    var ret=[],p;
+                    for(p in o) if(Object.prototype.hasOwnProperty.call(o,p)) ret.push(p);
+                    return ret;
+                }
+            }
+
+            function randomColor() {
+                // kudos to: http://paulirish.com/2009/random-hex-color-code-snippets/
+                // some tricks going on here:
+                //  the << 0 is converting the random float to an int
+                //  the '00000' and .substr(-6) is left padding  the result with zeros to a total length of 6
+                var hexColor = '#'+('00000'+(Math.random()*0xffffff<<0).toString(16)).substr(-6);
+                return hexColor;
+            }
+        </script>
+
+
+        <script type="text/javascript">
+            d3.select("#focusInfoBox").style("display", "none");
+            var showInfoBox = false;
+            var showArea = true;
+            var showZeroValueLines = false;
+            var showValueLines = false;
+
+            var curDataset = null;          // [{field1: val, field2: val, ...}]
+            var datasetByDate = null;       // {Date: {field1: val, field2: val, ...}}
+            var fieldInfo = new Object();   // {fieldName: {type: X, max: X, min: X}}
+            var dateField;                  // {type: X, max: X, min: X}
+            var availableFocusFields = [];
+            var selectedFocusFields = [];
+
+            var focusPlots = new Object;  // {fieldName: Plot}
+            var contextPlot = null;
+
+            // setup the X scales and axes - domain and range will be updated
+            var focusXScale = d3.time.scale();
+            var contextXScale = d3.time.scale();
+            var focusXAxis = d3.svg.axis()
+                .scale(focusXScale)
+                .tickFormat(d3.time.format("%Y-%m-%d"))
+                .orient("top");
+            var contextXAxis = d3.svg.axis()
+                .scale(contextXScale)
+                .tickFormat(d3.time.format("%Y-%m-%d"))
+                .orient("bottom");
+            var brush = d3.svg.brush()
+                .x(contextXScale)
+                .on("brush", brushMove);
+
+            // the current height of the focus region (updated upon window resize)
+            var visWidth;
+            var visHeight;
+            var focusLabelsWidth = 140;
+            var plotWidth;
+
+            var focusPlotHeight;
+            var focusAxisHeight = 30;
+
+            var contextPlotHeight = 60;
+            var contextAxisHeight = 25;
+            var contextHeight = contextPlotHeight + contextAxisHeight;
+
+            ///////////////////////////////////////////////////////////
+            // focus svg elements
+            var focusSVG = d3.select("#focus")
+                .append("svg:svg")
+                .attr("id", "focusSVG");
+
+            focusSVG.append("defs")
+                .append("clipPath")
+                .attr("id", "focusClip")
+                .append("rect")
+                .attr("id", "focusClipRect");
+
+            focusSVG.append("svg:g")
+                .attr("id", "focusPlots")
+                .on("mousemove", focusOnMouseMove)
+                .on("mouseout", focusOnMouseOut)
+                // need to draw a background rectangle for the mousemove function to register
+                .append("svg:rect")
+                .attr("id", "focusPlotBackground")
+                .attr("fill", "white")
+                .attr("x", 0)
+                .attr("y", 0)
+                // append the y mouse follow line
+                .append("svg:line")
+                .attr("id", "focusYMouseLine");
+
+            focusSVG.append("svg:g")
+                .attr("class", "x axis")
+                .attr("id", "focusXAxis")
+                .attr("transform", "translate(0," + (focusAxisHeight-10) + ")");
+
+            focusSVG.append("svg:g")
+                .attr("id", "focusLabels");
+
+            ///////////////////////////////////////////////////////////
+            // context svg elements
+            var contextSVG = d3.select("#context")
+                .append("svg")
+                .attr("id", "contextSVG")
+                .attr("height", contextHeight);
+
+            contextSVG.append("svg:g")
+                .attr("id", "contextPlot");
+
+            contextSVG.append("svg:g")
+                .attr("class", "x axis")
+                .attr("id", "contextXAxis")
+                .attr("transform", "translate(0," + (contextPlotHeight + 5) + ")");
+
+            ///////////////////////////////////////////////////////////
+            // context svg elements
+            updateWidths();
+            updateHeights();
+            draw();
+
+            window.onresize = function(evt) {
+                updateWidths();
+                updateHeights();
+                updateContextPlot();
+                draw();
+            }
+
+
+            function handleFileLoad(evt) {
+                // FileList object
+                var files = evt.target.files;
+
+                if (files.length == 0) {
+                    return;
+                }
+
+                // read the file into a string
+                var f = files[0];
+                if (!f.type.match("text/csv")) {
+                    var err = "invalid type: " + f.type + "\n" +
+                        "expects text/csv";
+                    alert(err);
+                }
+
+                var reader = new FileReader();
+                reader.onload = function(csvText) {
+                    var data = d3.csv.parse(csvText.target.result);
+                    var dfieldInfo = preprocessNamedData(data);
+                    setCurrentDataset("TODO_FNAME", dfieldInfo, data);
+                };
+                reader.readAsText(f);
+            }
+            document.getElementById('fileLoad').addEventListener('change', handleFileLoad, false);
+
+            // DEBUGGING ONLY - to avoid having to load a file manually each time
+            //var fname = "MetaGeekData.csv";
+            //d3.csv(fname, function(data) {
+            //        var dfieldInfo = preprocessNamedData(data);
+            //        setCurrentDataset(fname, dfieldInfo, data);
+            //    }
+            //);
+
+
+            /**
+             * sets up unformatted string data to be used as a dataset
+             * guesses data-types for each attribute and converts the string value to that type
+             * assumes a list of records that all have the same attributes and matching value-types
+             * NOTE: this internally alters the passed in 'data' (impure)
+             */
+            function preprocessNamedData(data) {
+                if (data == null) {
+                    console.error("null data passed into preprocessNamedData");
+                    return null;
+                }
+
+                // get the metadata for each field
+                var fieldInfo = new Object();
+                var row0 = data[0];
+                for (var fieldName in row0) {
+                    fieldVal = row0[fieldName];
+                    fieldInfo[fieldName] = new Object();
+                    fieldInfo[fieldName]["type"] = dg.guessDataType(fieldVal);
+                    fieldInfo[fieldName]["name"] = fieldName;
+                }
+
+                // convert all of the data to the guessed type
+                for (var row_i in data) {
+                    for (var fieldName in data[row_i]) {
+                        type = fieldInfo[fieldName]["type"];
+                        fieldVal = type.parse(data[row_i][fieldName]);
+                        data[row_i][fieldName] = fieldVal;
+                    }
+                }
+
+                return fieldInfo;
+            }
+
+
+            // using fieldInfo, get some more metadata about each of the data fields
+            function processDataSet(fieldInfo, data) {
+                // find the min and max of each field
+                accumulators = new Object();
+                for (var fieldName in fieldInfo) {
+                    accumulators[fieldName] = new Object();
+                    accumulators[fieldName]["min"] = dg.Accumulator.generic_min();
+                    accumulators[fieldName]["max"] = dg.Accumulator.generic_max();
+                }
+
+                for (var row in data) {
+                    // these operations could all be done in parallel - *sigh*
+                    for (var fieldName in data[row]) {
+                        for (var acc in accumulators[fieldName]) {
+                            var val = data[row][fieldName];
+                            accumulators[fieldName][acc].accumulate(val);
+                        }
+                    }
+                }
+
+                // assign the accumulators' values onto the fieldInfo structure
+                for (var fieldName in fieldInfo) {
+                    for (var acc in accumulators[fieldName]) {
+                        fieldInfo[fieldName][acc] = accumulators[fieldName][acc].getValue();
+                    }
+                }
+            }
+
+
+            function updateWidths() {
+                var screenWidth = window.innerWidth;
+
+                // control div should be at least 375px wide
+                var ctlWidth = 300;
+
+                // visualization div should be at least 400px wide
+                var pad = 10;
+                visWidth = Math.max(screenWidth - ctlWidth, 400) - pad * 4;
+
+                // set the sizes of #vis and #controls divs
+                document.getElementById('vis').style.top = '0px';
+                document.getElementById('vis').style.left = '0px';
+                document.getElementById('vis').style.width = visWidth + 'px';
+                document.getElementById('vis').style.padding = "10px 0px 0px 10px";
+                document.getElementById('controls').style.top = '0px';
+                document.getElementById('controls').style.left = visWidth + pad + 'px';
+                document.getElementById('controls').style.width = ctlWidth + 'px';
+                document.getElementById('controls').style.padding = "10px 0px 0px 10px";
+
+                plotWidth = visWidth - focusLabelsWidth;
+
+                // update focus SVG dimensions
+                d3.select("#focusSVG")
+                    .attr("width", visWidth);
+                d3.select("#focusPlots")
+                    .attr("width", plotWidth);
+                d3.select("#focusLabels")
+                    .attr("transform", "translate(" + plotWidth + ", 0)")
+                    .attr("width", focusLabelsWidth);
+                d3.select("#focusClipRect")
+                    .attr("width", plotWidth);
+                d3.select("#focusPlotBackground")
+                    .attr("width", plotWidth);
+
+                // update context SVG dimensions
+                d3.select("#contextSVG")
+                    .attr("width", plotWidth);
+                d3.select("#contextPlot")
+                    .attr("width", plotWidth);
+
+                // update the X scales' ranges to the new widths
+                focusXScale.range([0, plotWidth]);
+                contextXScale.range([0, plotWidth]);
+            }
+
+
+            function updateHeights() {
+                visHeight = window.innerHeight;
+
+                var numFocusPlots = selectedFocusFields.length;
+                var focusHeightAvailable = visHeight - focusAxisHeight - contextHeight - 20;
+                plotHeight = 0.1 * plotWidth;
+                //plotHeight = Math.floor(focusHeightAvailable / numFocusPlots);
+                //plotHeight = Math.min(100, plotHeight); // maximum of 100
+                //plotHeight = Math.max(60, plotHeight);  // minimum of 60
+                var focusHeightRequired = plotHeight * numFocusPlots + focusAxisHeight;
+
+                // update the position of the context plot
+                //var contextTop = Math.min(focusHeightAvailable, focusHeightRequired);
+                //d3.select("#context")
+                //    .style("top", contextTop + "px");
+
+                focusPlotHeight = focusHeightRequired;
+
+                //d3.select("#focus").attr("height", focusHeightRequired);
+                d3.select("#focusSVG")
+                    .transition()
+                    .attr("height", focusHeightRequired);
+
+                d3.select("#focusPlotBackground")
+                    .attr("height", focusHeightRequired);
+                d3.select("#focusClipRect")
+                    .transition()
+                    .attr("height", focusHeightRequired);
+
+                for (var i in selectedFocusFields) {
+                    var fieldName = selectedFocusFields[i];
+                    var offset = i * plotHeight + focusAxisHeight;
+                    focusPlots[fieldName].yScale.range([offset + plotHeight * 0.85, offset]);
+                    focusPlots[fieldName].updatePath();
+                }
+            }
+
+
+            function setCurrentDataset(name, dfieldInfo, data) {
+                processDataSet(dfieldInfo, data);
+
+                // get the timeline extents for use in all plots
+                if (dfieldInfo["Date"] == undefined) {
+                    console.error("dataset does not contain a 'Date' field");
+                    return;
+                }
+                dateField = dfieldInfo["Date"];
+                // remove the 'Date' field from the fieldInfo
+                delete dfieldInfo["Date"];
+
+                // update the min and max dates used by the X Scales
+                var minDate = dateField["min"];
+                var maxDate = dateField["max"];
+                if (minDate == undefined || maxDate == undefined) {
+                    console.error("dateField 'min' and/or 'max' is undefined");
+                    return;
+                }
+                focusXScale.domain([minDate, maxDate]);
+                contextXScale.domain([minDate, maxDate]);
+
+                // update the globals
+                curDataset = data;
+                fieldInfo = dfieldInfo;
+                availableFocusFields = Object.keys(fieldInfo);
+                selectedFocusFields = [];
+                contextField = availableFocusFields[0];
+
+                // regenerate the datasetByDate
+                datasetByDate = new Object();
+                for (var i=0; i<curDataset.length; i++) {
+                    var rec = curDataset[i];
+                    var rdate = rec["Date"];
+                    datasetByDate[rdate.getTime()] = rec;
+                }
+
+                // create the new focusPlot objects
+                focusPlots = new Object();
+                for (var i in availableFocusFields) {
+                    var fieldName = availableFocusFields[i];
+                    focusPlots[fieldName] = new PlotDef(fieldName, i);
+                }
+
+                d3.selectAll(".focusPlotGradient").remove();
+
+                updateFieldControls();
+                updateSelectedFocusFields();
+                updateContextPlot();
+
+                draw();
+            }
+
+
+            function PlotDef(fieldName, i) {
+                var minVal = Math.min(0, fieldInfo[fieldName]["min"]);
+                var maxVal = fieldInfo[fieldName]["max"];
+
+                this.fieldName = fieldName;
+                this.field_i = i;
+
+                this.xScale = focusXScale;
+                this.yScale = d3.scale.linear()
+                    .domain([minVal, maxVal]);
+
+                this.zeroLocPct = 100 * maxVal / (maxVal - minVal);
+
+                this.area = null;
+                this.line = null;
+                this.updatePath();
+            }
+            PlotDef.prototype.updatePath = function() {
+                this.area = d3.svg.area()
+                    .interpolate("linear")
+                    .x(function(d) { return this.xScale(d["Date"]); })
+                    .y0(function() { return this.yScale(0); })
+                    .y1(function(d) { return this.yScale(d[this.fieldName]); });
+
+                this.line = d3.svg.line()
+                    .interpolate("linear")
+                    .x(function(d) { return this.xScale(d["Date"]); })
+                    .y(function(d) { return this.yScale(d[this.fieldName]); });
+            }
+
+
+            // update the available controls for field selection
+            function updateFieldControls() {
+                var fc = d3.select("#fieldTable")
+                    .selectAll(".fieldRow")
+                    .data(availableFocusFields, String);
+
+                var tr = fc.enter()
+                    .append("tr")
+                    .attr("class", "fieldRow");
+
+                tr.append("td")
+                    .attr("class", "centered")
+                    .append("input")
+                    .attr("type", "checkbox")
+                    .attr("name", "focusFields[]")
+                    .attr("value", String)
+                    .attr("checked", "yes")
+                    .attr("onClick", "onFocusFieldSelection()");
+
+                tr.append("td")
+                    .attr("class", "centered")
+                    .append("input")
+                    .attr("type", "radio")
+                    .attr("name", "contextField")
+                    .attr("value", String)
+                    .attr("onClick", "onContextFieldSelection(this)")
+                    .attr("checked", function(d) { if (d == contextField) return "yes"; });
+
+                tr.append("td")
+                    .text(function(d) { return d; });
+
+                fc.exit().remove();
+            }
+
+
+            function updateSelectedFocusFields() {
+                // determine the currently checked boxes
+                var fieldBoxes = document.getElementsByName("focusFields[]");
+                var sel = new Array();
+                for (var i=0; i<fieldBoxes.length; i++) {
+                    var fieldName = fieldBoxes[i].value;
+                    if (fieldBoxes[i].checked == true) {
+                        sel.push(fieldName);
+                    }
+                }
+
+                selectedFocusFields = sel;
+                updateHeights();
+            }
+
+
+            function updateContextPlot() {
+                contextPlot = new PlotDef(contextField, -1);
+                contextPlot.xScale = contextXScale;
+                contextPlot.yScale.range([contextPlotHeight, 0]);
+                contextPlot.updatePath();
+
+                d3.select("#contextPlot").select("path").remove();
+                d3.select("#contextPlot")
+                    .append("svg:path")
+                    .attr("fill", "#A6BDDB")
+                    .attr("stroke", "black")
+                    .attr("class", "contextPlot")
+                    .attr("d", function(d) { return contextPlot.area(curDataset); });
+
+                // setup brush
+                d3.select("#contextBrush").remove();
+                var brushg = d3.select("#contextPlot")
+                    .append("g")
+                    .attr("class", "x brush")
+                    .attr("id", "contextBrush")
+                    .call(brush);
+
+                brushg.selectAll(".resize")
+                    .append("ellipse")
+                    .attr("fill", "white")
+                    .attr("stroke", "black")
+                    .attr("cy", contextPlotHeight * 0.5)
+                    .attr("rx", "4px")
+                    .attr("ry", "10px");
+
+                brushg.selectAll("rect")
+                    .attr("y", -2)
+                    .attr("height", contextPlotHeight + 2);
+            }
+
+
+
+            function draw() {
+                if (availableFocusFields.length == 0) {
+                    return;
+                }
+
+                // setup the color gradients
+                var fgrads = focusSVG.select("defs")
+                    .selectAll(".focusPlotGradient")
+                    .data(availableFocusFields, String);
+
+                egrad = fgrads.enter()
+                    .append("svg:linearGradient")
+                    .attr("class", "focusPlotGradient")
+                    .attr("id", function(d) { return "plotGradient_" + focusPlots[d].field_i; })
+                    .attr("x1", "0%")
+                    .attr("y1", "0%")
+                    .attr("x2", "0%")
+                    .attr("y2", "100%");
+                egrad.append("svg:stop")
+                    .attr("offset", "0%")
+                    .attr("stop-color", "#2b8cbe")
+                    .attr("stop-opacity", 1)
+                egrad.append("svg:stop")
+                    .attr("offset", function(d) { return focusPlots[d].zeroLocPct + "%";} )
+                    .attr("stop-color", "#2b8cbe")
+                    .attr("stop-opacity", 1)
+                egrad.append("svg:stop")
+                    .attr("offset", function(d) { return focusPlots[d].zeroLocPct + "%";} )
+                    .attr("stop-color", "#c00")
+                    .attr("stop-opacity", 1)
+                egrad.append("svg:stop")
+                    .attr("offset", "100%")
+                    .attr("stop-color", "#c00")
+                    .attr("stop-opacity", 1);
+
+                /////////////////////////////////////////////////
+                // draw/update the focus plots
+                var fplots = d3.select("#focusPlots")
+                    .selectAll(".focusPlot")
+                    .data(selectedFocusFields, String);
+
+                if (showArea) {
+                    fplots.enter()
+                        .append("svg:path")
+                        .attr("class", "focusPlot")
+                        .attr("d", function(d) { return focusPlots[d].area(curDataset); })
+                        .attr("fill", function(d, i) { return "url(#plotGradient_" + focusPlots[d].field_i + ")"; })
+                        //.attr("stroke", "black")
+                        .attr("clip-path", "url(#focusClip)");
+
+                    fplots.transition()
+                        .attr("d", function(d) { return focusPlots[d].area(curDataset); });
+                } else {
+                    fplots.enter()
+                        .append("svg:path")
+                        .attr("class", "focusPlot")
+                        .attr("d", function(d) { return focusPlots[d].line(curDataset); })
+                        .attr("fill", "none")
+                        .attr("stroke", function(d, i) { return "url(#plotGradient_" + focusPlots[d].field_i + ")"; })
+                        .attr("clip-path", "url(#focusClip)");
+
+                    fplots.transition()
+                        .attr("d", function(d) { return focusPlots[d].line(curDataset); });
+                }
+
+                fplots.exit().remove();
+
+                /////////////////////////////////////////////////
+                // draw the zero lines
+                if (showZeroValueLines) {
+                    var fplotZeros = d3.select("#focusPlots")
+                        .selectAll(".focusPlotZero")
+                        .data(selectedFocusFields, String);
+
+                    fplotZeros.enter()
+                        .append("svg:line")
+                        .attr("class", "focusPlotZero")
+                        .style("stroke-dasharray", "9, 5")
+                        .attr("shape-rendering", "crispEdges")
+                        .attr("stroke", "gray")
+                        .attr("x1", 0)
+                        .attr("x2", plotWidth)
+                        .attr("y1", function(d) { return focusPlots[d].yScale(0); })
+                        .attr("y2", function(d) { return focusPlots[d].yScale(0); });
+
+                    fplotZeros.transition()
+                        .attr("y1", function(d) { return focusPlots[d].yScale(0); })
+                        .attr("y2", function(d) { return focusPlots[d].yScale(0); });
+
+                    fplotZeros.exit().remove();
+                }
+
+
+                /////////////////////////////////////////////////
+                // re-append the cursor lines to bring them to front
+                d3.select("#focusYMouseLine").remove();
+                d3.select("#focusPlots").append("svg:line")
+                    .attr("id", "focusYMouseLine")
+                    .style("display", "none")
+                    .attr("stroke", "#555")
+                    .attr("shape-rendering", "crispEdges")
+                    .attr("y1", focusAxisHeight)
+                    .attr("y2", focusPlotHeight);
+
+                d3.selectAll(".focusValueLines").remove();
+                var focusHLines = d3.select("#focusPlots")
+                    .selectAll(".focusValueLines")
+                    .data(selectedFocusFields, String);
+                focusHLines.enter()
+                    .append("svg:line")
+                    .attr("class", "focusValueLines")
+                    .style("display", "none")
+                    .attr("stroke", "#555")
+                    .attr("shape-rendering", "crispEdges")
+                    .attr("x1", 0)
+                    .attr("x2", plotWidth);
+
+                d3.select("#focusXMouseLine").remove();
+                d3.select("#focusPlots").append("svg:line")
+                    .attr("id", "focusXMouseLine")
+                    .style("display", "none")
+                    .attr("stroke", "#555")
+                    .attr("shape-rendering", "crispEdges")
+                    .attr("x1", 0)
+                    .attr("x2", plotWidth);
+
+                /////////////////////////////////////////////////
+                // draw the focus labels
+                var focusLabelOffset = plotHeight / 2 + focusAxisHeight;
+                var focusLabels = d3.select("#focusLabels")
+                    .selectAll(".focusLabel")
+                    .data(selectedFocusFields, String);
+
+                focusLabels.enter()
+                    .append("svg:text")
+                    .attr("class", "focusLabel")
+                    .attr("transform", function(d, i) { 
+                            return "translate(0, " + (plotHeight * i + focusLabelOffset) + ")";
+                            })
+                    .attr("dx", ".35em")
+                    .text(String);
+
+                focusLabels.transition()
+                    .attr("transform", function(d, i) { 
+                            return "translate(0, " + (plotHeight * i + focusLabelOffset) + ")";
+                            })
+                    .text(String);
+
+                focusLabels.exit().remove();
+
+                // update the axes
+                d3.select("#focusXAxis").call(focusXAxis);
+                d3.select("#contextXAxis").call(contextXAxis);
+            }
+
+
+            function brushMove() {
+                // update the focus x-axis scale
+                if (brush.empty()) {
+                    focusXScale.domain(contextXScale.domain());
+                } else {
+                    focusXScale.domain(brush.extent());
+                }
+
+                // update the focus portion paths
+                var fplots = d3.select("#focusPlots")
+                    .selectAll(".focusPlot")
+                    .data(selectedFocusFields, String);
+
+                if (showArea) {
+                    fplots.attr("d", function(d) { return focusPlots[d].area(curDataset); });
+                } else {
+                    fplots.attr("d", function(d) { return focusPlots[d].line(curDataset); });
+                }
+
+                d3.select("#focusXAxis").call(focusXAxis);
+            }
+
+
+            function focusOnMouseMove() {
+                var coord = d3.svg.mouse(this);
+
+                if (coord[1] < focusAxisHeight) {
+                    focusOnMouseOut();
+                    return;
+                }
+
+                d3.select("#focusYMouseLine")
+                    .style("display", "inherit")
+                    .attr("x1", coord[0])
+                    .attr("x2", coord[0]);
+
+                var xDate = focusXScale.invert(coord[0]);
+                xDate.setHours(0);
+                xDate.setMinutes(0);
+                xDate.setSeconds(0);
+                xDate.setMilliseconds(0);
+                var rec = datasetByDate[xDate.getTime()];
+
+                if (showValueLines) {
+                    d3.select("#focusPlots").selectAll(".focusValueLines")
+                        .data(selectedFocusFields, String)
+                        .style("display", "inherit")
+                        .transition().duration(10)
+                        .attr("y1", function(d) { return focusPlots[d].yScale(rec[d]); })
+                        .attr("y2", function(d) { return focusPlots[d].yScale(rec[d]); });
+                } else {
+                    d3.select("#focusXMouseLine")
+                        .style("display", "inherit")
+                        .attr("y1", coord[1])
+                        .attr("y2", coord[1]);
+                }
+
+
+                if (showInfoBox) {
+                    var fieldValStr = "<b>" + xDate.toDateString() + "</b><br />";
+                    if (rec != undefined) {
+                        for (var i in selectedFocusFields) {
+                            var fieldName = selectedFocusFields[i];
+                            var fval = rec[fieldName];
+                            fieldValStr += fieldName + ": " + fval + "<br />";
+                        }
+                    }
+
+                    var ibox = d3.select("#focusInfoBox");
+                    ibox.style("display", "block");	
+                    ibox.select("p").html(fieldValStr);
+
+                    var absCoord = [d3.event.pageX, d3.event.pageY];
+                    ibox.style("left", coord[0] + 25  + "px" );
+                    ibox.style("top", coord[1] + 25 + "px");
+                }
+            }
+
+
+            function focusOnMouseOut() {
+                var coord = d3.svg.mouse(this);
+                if (coord[0] < 0 || coord[0] > plotWidth) {
+                    d3.select("#focusYMouseLine").style("display", "none");
+                    d3.select("#focusXMouseLine").style("display", "none");
+                    d3.selectAll(".focusValueLines").style("display", "none");
+                    d3.select("#focusInfoBox").style("display", "none");
+                    return;
+                }
+                if (coord[1] < focusAxisHeight || coord[1] > focusPlotHeight) {
+                    d3.select("#focusYMouseLine").style("display", "none");
+                    d3.select("#focusXMouseLine").style("display", "none");
+                    d3.selectAll(".focusValueLines").style("display", "none");
+                    d3.select("#focusInfoBox").style("display", "none");
+                    return;
+                }
+            }
+
+            function onFocusFieldSelection() {
+                updateSelectedFocusFields();
+                draw();
+            }
+
+            function onContextFieldSelection(rb) {
+                contextField = rb.value;
+                updateContextPlot();
+            }
+
+            function onShowInfoBox(cb) {
+                showInfoBox = cb.checked;
+                if (!showInfoBox) {
+                    d3.select("#focusInfoBox").style("display", "none");
+                }
+            }
+
+            function onShowAreaClick(cb) {
+                showArea = cb.checked;
+                d3.selectAll(".focusPlot").remove();
+                draw();
+            }
+
+            function onShowZeroLines(cb) {
+                showZeroValueLines = cb.checked;
+                d3.selectAll(".focusPlotZero").remove();
+                draw();
+            }
+
+            function onShowValueLines(cb) {
+                showValueLines = cb.checked;
+            }
+        </script>
+    </body>
+</html>
+
