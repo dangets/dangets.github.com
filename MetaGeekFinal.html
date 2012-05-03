@@ -700,6 +700,8 @@
                         .attr("y2", function(d) { return focusPlots[d].yScale(0); });
 
                     fplotZeros.transition()
+                        .attr("x1", 0)
+                        .attr("x2", plotWidth)
                         .attr("y1", function(d) { return focusPlots[d].yScale(0); })
                         .attr("y2", function(d) { return focusPlots[d].yScale(0); });
 
