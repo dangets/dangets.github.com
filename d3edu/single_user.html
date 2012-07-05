@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>D3 experiment</title>
+        <script type="text/javascript" src="http://mbostock.github.com/d3/d3.v2.js"></script>
+        <!--
+        <script type="text/javascript" src="d3/d3.v2.js"></script>
+        -->
+
+        <style type="text/css">
+        #vis {
+            font: 10px sans-serif;
+            font-color: black;
+        }
+        </style>
+    </head>
+
+    <body>
+        <select id="userSelect" onchange="updateSelectedUser(this)"> 
+        </select>
+
+        <div id="vis">
+        </div>
+
+        <script type="text/javascript">
+            var labelWidth = 70;
+
+            var visWidth = 400;
+            var visHeight = 300;
+
+            var userData = [];    // [UserObj, ...]
+            var usersByTag = new Object();
+
+            var selGamerTag = "neowallace";
+
+            var vis = d3.select("#vis");
+            document.getElementById('vis').style.top = '0px';
+            document.getElementById('vis').style.left = '0px';
+            document.getElementById('vis').style.width = visWidth + 'px';
+            document.getElementById('vis').style.padding = "10px 0px 0px 10px";
+
+            var svg = d3.select("#vis")
+                .append("svg")
+                .attr("width", labelWidth + visWidth)
+                .attr("height", visHeight);
+
+            var labelSVG = svg.append("svg:g")
+                .attr("width", labelWidth)
+                .attr("height", visHeight);
+
+            var chart = svg.append("svg:g")
+                .attr("width", visWidth)
+                .attr("height", visHeight)
+                .attr("transform", "translate(" + labelWidth + ", 0)");
+
+            var cmpFields = [
+                "Total XP",
+                "Quest XP",
+                "Active",
+                "Completed",
+                "Dropped",
+                "Reward XP",
+                "Badges",
+                "Achievements",
+                "Awards",
+                "Activity",
+                "Ratings",
+                "Avg. Rating",
+                "Avg. Time",
+                "Comments",
+            ];
+
+            var yScale;
+            var fieldStats = new Object();
+            var fieldScales = new Object();
+
+            function draw() {
+                var selUser = usersByTag[selGamerTag];
+
+                var bandSize = yScale.rangeBand();
+                var bars = chart.selectAll("rect")
+                    .data(cmpFields);
+                var meanLines = chart.selectAll(".mean_line")
+                    .data(cmpFields);
+
+                //console.debug(fieldStats);
+
+                bars.enter()
+                    .append("rect")
+                    .attr("x", 0)
+                    .attr("y", function(d) { return yScale(d); })
+                    .attr("width", function(d) { return fieldScales[d](selUser[d]); })
+                    .attr("height", bandSize)
+                    .style("fill", "gray");
+
+                bars.transition()
+                    .duration(1000)
+                    .attr("width", function(d) { return fieldScales[d](selUser[d]); });
+
+                meanLines.enter()
+                    .append("line")
+                    .attr("class", "mean_line")
+                    .attr("x1", function(d) { return fieldScales[d](fieldStats[d].mean); })
+                    .attr("x2", function(d) { return fieldScales[d](fieldStats[d].mean); })
+                    .attr("y1", function(d) { return yScale(d); })
+                    .attr("y2", function(d) { return yScale(d) + bandSize; })
+                    .attr("stroke", "#555");
+
+                var labels = labelSVG.selectAll("text")
+                    .data(cmpFields);
+
+                labels.enter()
+                    .append("text")
+                    .attr("text-anchor", "end")
+                    .attr("x", labelWidth)
+                    .attr("y", function(d) { return yScale(d) + bandSize / 2; })
+                    .attr("dx", -4)         // padding right
+                    .attr("dy", ".35em")    // valign middle
+                    .text(String);
+            }
+
+
+            function updateScales() {
+                yScale = d3.scale.ordinal()
+                    .domain(cmpFields)
+                    .rangeRoundBands([0, visHeight], 0.25);
+                    //.rangeRoundBands([0, visHeight]);
+
+                for (var i=0; i<cmpFields.length; ++i) {
+                    var fname = cmpFields[i];
+
+                    fieldScales[fname] = d3.scale.linear()
+                        .domain([fieldStats[fname].min, fieldStats[fname].max])
+                        .rangeRound([0, visWidth]);
+                }
+            }
+
+
+            function updateFieldStats() {
+                // this is an inefficient design to calculate min, max, mean, etc...
+                //  from the whole data set every time.  A better design would be to
+                //  do this in a batch job and pass in the numbers directly
+                for (var i=0; i<cmpFields.length; ++i) {
+                    var fname = cmpFields[i];
+
+                    var field = new Object();
+                    field.min = d3.min(userData, function(d) { return d[fname]; });
+                    field.max = d3.max(userData, function(d) { return d[fname]; });
+                    field.mean = d3.mean(userData, function(d) { return d[fname]; });
+
+                    fieldStats[fname] = field;
+                }
+            }
+
+
+            /**
+             * convert a single record with string values
+             * into a user object with proper types
+             */
+            function createUserObj(namedRec) {
+                var user = new Object();
+
+                user["GamerTag"] = namedRec["GamerTag"];
+                user["Name"] = namedRec["Name"];
+                user["Last Initial"] = namedRec["Last Initial"];
+                user["Rank/Grade"] = namedRec["Rank/Grade"];                 // ordinal field...
+                user["Total XP"] = parseInt(namedRec["Total XP"]);
+                user["Quest XP"] = parseInt(namedRec["Quest XP"]);
+                user["Active"] = parseInt(namedRec["Active"]);
+                user["Completed"] = parseInt(namedRec["Completed"]);
+                user["Dropped"] = parseInt(namedRec["Dropped"]);
+                user["Reward XP"] = parseInt(namedRec["Reward XP"]);
+                user["Badges"] = parseInt(namedRec["Badges"]);
+                user["Achievements"] = parseInt(namedRec["Achievements"]);
+                user["Awards"] = parseInt(namedRec["Awards"]);
+                user["Activity"] = parseInt(namedRec["Activity"]);
+                user["Persistence"] = namedRec["Persistence"];
+                user["Ratings"] = parseInt(namedRec["Ratings"]);
+                user["Avg. Rating"] = parseFloat(namedRec["Avg. Rating"]);
+                user["Avg. Time"] = parseFloat(namedRec["Avg. Time"]);
+                user["Comments"] = parseInt(namedRec["Comments"]);
+
+                return user;
+            }
+
+            function preprocessUserData(data) {
+                if (data == null) {
+                    console.error("null data passed into preprocessUserData");
+                    return null;
+                }
+
+                var newUserData = new Array();
+                for (var i=0; i < data.length; i++) {
+                    var user = createUserObj(data[i]);
+                    newUserData.push(user);
+                    usersByTag[user["GamerTag"]] = user;
+                }
+
+                return newUserData;
+            }
+
+            function updateUserControl() {
+                var users = d3.select("#userSelect").selectAll("option")
+                    .data(userData, function(d) { return d["GamerTag"]; });
+
+                users.enter()
+                    .append("option")
+                    .text(function(d) { return d["GamerTag"]; });
+
+                users.exit().remove();
+            }
+
+            function updateSelectedUser() {
+                var sel = document.getElementById("userSelect");
+                selGamerTag = sel.options[sel.selectedIndex].text;
+                draw();
+            }
+
+            var fname = "user_report.csv";
+            d3.csv(fname, function(data) {
+                userData = preprocessUserData(data);
+                updateUserControl();
+                updateFieldStats();
+                updateScales();
+                draw();
+            });
+
+            
+        </script>
+    </body>
+</html>
+
+
+
