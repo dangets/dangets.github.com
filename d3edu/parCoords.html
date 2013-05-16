@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title></title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <link href="/static/css/bootstrap.min.css" rel="stylesheet" media="screen">
+        <!--
+        <link href="http://twitter.github.com/bootstrap/assets/css/bootstrap.css" rel="stylesheet" media="screen">
+        -->
+        
+        <style type="text/css">
+            body {
+                padding-top: 60px;
+                padding-bottom: 40px;
+            }
+
+            .table-nonfluid {
+                width: auto;
+            }
+
+            .bordertop-none th, .bordertop-none td {
+                border-top: none;
+            }
+        </style>
+
+        
+<style>
+    body {
+        overflow-y: scroll;
+    }
+
+    .chart {
+        max-width: 100%;
+        overflow-x: scroll;
+        overflow-y: hidden;
+        padding-bottom: 15px;
+        position: relative;
+    }
+
+    .chart svg, .chart canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+
+    .chart {
+    }
+
+    .chart svg {
+        font-size: 12px;
+        width: 4000px;
+    }
+
+    .yAxis line, .yAxis path, .xAxis line, .xAxis path
+    {
+        fill: none;
+        stroke: #000;
+        stroke-width: 1px;
+        shape-rendering: crispEdges;
+    }
+
+    .foreground path {
+        fill: none;
+        stroke-width: 1.5px;
+        stroke: #ccc;
+    }
+
+    .brush .extent {
+        fill-opacity: .3;
+        stroke: #fff;
+        shape-rendering: crispEdges;
+    }
+</style>
+
+
+        <!-- HTML5 shim, for IE6-8 support of HTML elements -->
+        <!--[if lt IE 9]>
+            <script src="https://html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+        <![endif]-->
+    </head>
+    <body>
+        <div class="container">
+            <div class="row">
+                <div class="span12">
+                    
+<div>
+    <h1>Rocket</h1>
+    <p>Learn how to be a rocketeer. We have:</p>
+<ul>
+<li>jet packs</li>
+<li>helmets</li>
+<li>oxygen</li>
+<li>moon boots</li>
+<li>moon sneakers</li>
+<li>moon pants</li>
+</ul>
+<p>All of these can be yours!</p>
+    <p>
+    <b>group.created_at</b>: 2011-04-23 18:30:18
+    </p>
+
+    <hr />
+
+    <div>
+        <h2>started_at</h2>
+        <div class="chart">
+            <svg></svg>
+        </div>
+        <p>
+            <ul id="userList">
+            </ul>
+        </p>
+    </div>
+</div>
+
+                </div>
+            </div>
+
+            <hr>
+            <footer>
+                <div class="container">
+                    Boise State Visualization Group
+                </div>
+            </footer>
+        </div>
+
+        <script src="/static/js/moment.min.js"></script>
+        <script src="/static/js/jquery-1.8.2.min.js"></script>
+        <script src="/static/js/bootstrap.min.js"></script>
+        <script src="/static/js/d3.v3.min.js"></script>
+
+        <!--
+        <script src="http://twitter.github.com/bootstrap/assets/js/bootstrap.min.js"></script>
+        <script src="http://d3js.org/d3.v3.min.js"></script>
+        -->
+        
+<script type="text/javascript">
+    function log(msg) {
+        console.debug(msg);
+    }
+
+    var totalWidth;
+    var totalHeight = 400;
+
+    var margin = { top: 10, right: 50, bottom: 50, left: 50 };
+    var width = 0;      // width dependent on # of weeks
+    var height = totalHeight - margin.top - margin.bottom;
+
+    var axisSpacing = 80;
+
+    var attempts = [{"username": "bricooke", "completed_at": "2011-09-18T03:51:09", "started_at": "2011-04-30T05:09:08", "current_state": "completed", "quest_id": 1}, {"username": "normal", "completed_at": "2011-05-14T13:34:45", "started_at": "2011-05-14T13:33:14", "current_state": "completed", "quest_id": 1}, {"username": "shallow", "completed_at": "2011-05-25T03:11:12", "started_at": "2011-05-06T16:47:11", "current_state": "completed", "quest_id": 1}, {"username": "haskell", "completed_at": "2011-05-14T13:58:40", "started_at": "2011-04-30T04:25:40", "current_state": "completed", "quest_id": 1}, {"username": "haskell", "completed_at": "", "started_at": "2011-04-30T04:25:40", "current_state": "in_progress", "quest_id": 1}, {"username": "ddtadmin", "completed_at": "2011-05-14T13:55:45", "started_at": "2011-05-02T16:36:43", "current_state": "completed", "quest_id": 1}, {"username": "tsalfie", "completed_at": "2011-05-14T13:39:15", "started_at": "2011-04-30T19:52:30", "current_state": "completed", "quest_id": 1}, {"username": "radracer", "completed_at": "2011-08-09T19:20:02", "started_at": "2011-08-09T06:02:14", "current_state": "completed", "quest_id": 1}, {"username": "normal3", "completed_at": "2011-07-07T17:46:43", "started_at": "2011-07-07T17:46:23", "current_state": "completed", "quest_id": 1}, {"username": "normal2", "completed_at": "2011-07-07T17:22:28", "started_at": "2011-07-07T17:21:35", "current_state": "completed", "quest_id": 1}, {"username": "bricooke", "completed_at": "2011-05-14T13:54:51", "started_at": "2011-05-01T02:50:11", "current_state": "completed", "quest_id": 8}, {"username": "haskell", "completed_at": "2011-05-14T13:55:21", "started_at": "2011-05-02T18:17:55", "current_state": "completed", "quest_id": 8}, {"username": "tsalfie", "completed_at": "2011-05-14T13:57:56", "started_at": "2011-05-11T21:30:34", "current_state": "completed", "quest_id": 8}, {"username": "bricooke", "completed_at": "2011-05-06T05:15:16", "started_at": "2011-05-05T12:38:54", "current_state": "completed", "quest_id": 11}, {"username": "normal", "completed_at": "2011-05-17T23:14:02", "started_at": "2011-05-17T23:13:48", "current_state": "completed", "quest_id": 11}, {"username": "shallow", "completed_at": "", "started_at": "2011-05-06T16:54:46", "current_state": "in_progress", "quest_id": 11}, {"username": "haskell", "completed_at": "2011-05-12T04:20:01", "started_at": "2011-05-12T04:19:25", "current_state": "completed", "quest_id": 11}, {"username": "ddtadmin", "completed_at": "2011-05-09T20:38:56", "started_at": "2011-05-09T20:38:19", "current_state": "completed", "quest_id": 11}, {"username": "tsalfie", "completed_at": "2011-05-11T21:41:13", "started_at": "2011-05-11T21:39:35", "current_state": "completed", "quest_id": 11}, {"username": "bricooke", "completed_at": "2011-05-14T13:58:17", "started_at": "2011-05-12T02:53:40", "current_state": "completed", "quest_id": 13}, {"username": "normal", "completed_at": "2011-05-27T16:24:02", "started_at": "2011-05-27T16:15:45", "current_state": "completed", "quest_id": 13}, {"username": "shallow", "completed_at": "2011-06-07T17:34:43", "started_at": "2011-05-29T01:07:10", "current_state": "completed", "quest_id": 13}, {"username": "haskell", "completed_at": "", "started_at": "2011-05-12T04:21:50", "current_state": "in_progress", "quest_id": 13}, {"username": "ddtadmin", "completed_at": "2011-05-14T13:57:27", "started_at": "2011-05-11T16:45:13", "current_state": "completed", "quest_id": 13}, {"username": "tsalfie", "completed_at": "2011-05-14T13:58:09", "started_at": "2011-05-11T21:34:05", "current_state": "completed", "quest_id": 13}, {"username": "pox", "completed_at": "2011-06-14T20:44:45", "started_at": "2011-06-10T18:20:41", "current_state": "completed", "quest_id": 13}, {"username": "bricooke", "completed_at": "2011-05-11T17:37:48", "started_at": "2011-05-11T17:37:42", "current_state": "completed", "quest_id": 15}, {"username": "normal", "completed_at": "2011-05-27T16:17:05", "started_at": "2011-05-27T16:16:45", "current_state": "completed", "quest_id": 15}, {"username": "shallow", "completed_at": "2011-05-29T01:11:04", "started_at": "2011-05-29T01:10:54", "current_state": "completed", "quest_id": 15}, {"username": "haskell", "completed_at": "2011-05-12T04:21:02", "started_at": "2011-05-12T04:20:36", "current_state": "completed", "quest_id": 15}, {"username": "ddtadmin", "completed_at": "2011-05-17T01:01:17", "started_at": "2011-05-17T01:00:05", "current_state": "completed", "quest_id": 15}, {"username": "tsalfie", "completed_at": "2011-05-11T21:33:50", "started_at": "2011-05-11T21:33:33", "current_state": "completed", "quest_id": 15}, {"username": "bricooke", "completed_at": "2011-05-12T02:30:47", "started_at": "2011-05-12T02:30:24", "current_state": "completed", "quest_id": 16}, {"username": "normal", "completed_at": "2011-05-27T16:18:38", "started_at": "2011-05-27T16:18:32", "current_state": "completed", "quest_id": 16}, {"username": "haskell", "completed_at": "2011-05-17T22:27:16", "started_at": "2011-05-17T22:27:03", "current_state": "completed", "quest_id": 16}, {"username": "ddtadmin", "completed_at": "2011-05-17T01:31:01", "started_at": "2011-05-17T01:11:05", "current_state": "completed", "quest_id": 16}, {"username": "tsalfie", "completed_at": "2011-05-17T22:29:18", "started_at": "2011-05-17T22:25:33", "current_state": "completed", "quest_id": 16}, {"username": "normal", "completed_at": "2011-05-14T13:58:28", "started_at": "2011-05-12T02:58:18", "current_state": "completed", "quest_id": 17}, {"username": "haskell", "completed_at": "", "started_at": "2011-06-18T04:15:32", "current_state": "in_progress", "quest_id": 27}, {"username": "tsalfie", "completed_at": "2011-08-09T05:15:47", "started_at": "2011-06-01T22:31:32", "current_state": "completed", "quest_id": 27}, {"username": "normal", "completed_at": "2011-06-09T13:18:27", "started_at": "2011-06-09T13:18:17", "current_state": "completed", "quest_id": 48}, {"username": "normal", "completed_at": "2011-06-23T05:34:05", "started_at": "2011-06-23T05:33:56", "current_state": "completed", "quest_id": 112}, {"username": "normal", "completed_at": "2011-07-02T14:47:47", "started_at": "2011-07-02T14:47:34", "current_state": "completed", "quest_id": 123}, {"username": "tsalfie", "completed_at": "2011-08-02T17:26:31", "started_at": "2011-08-02T17:26:12", "current_state": "completed", "quest_id": 123}, {"username": "haskell", "completed_at": "", "started_at": "2011-07-05T19:55:49", "current_state": "in_progress", "quest_id": 143}, {"username": "normal", "completed_at": "2011-07-15T17:56:52", "started_at": "2011-07-07T16:46:32", "current_state": "completed", "quest_id": 150}, {"username": "tsalfie", "completed_at": "2011-07-07T17:27:34", "started_at": "2011-07-07T17:27:24", "current_state": "completed", "quest_id": 150}, {"username": "normal3", "completed_at": "2011-07-07T17:46:57", "started_at": "2011-07-07T17:46:51", "current_state": "completed", "quest_id": 150}, {"username": "normal2", "completed_at": "2011-07-07T17:22:58", "started_at": "2011-07-07T17:22:51", "current_state": "completed", "quest_id": 150}, {"username": "haskell", "completed_at": "", "started_at": "2011-07-12T15:54:04", "current_state": "in_progress", "quest_id": 156}, {"username": "tsalfie", "completed_at": "2011-07-15T17:57:00", "started_at": "2011-07-13T21:59:50", "current_state": "completed", "quest_id": 156}, {"username": "tsalfie", "completed_at": "2012-10-17T16:24:17", "started_at": "2012-10-05T03:23:43", "current_state": "in_progress", "quest_id": 175}, {"username": "tsalfie", "completed_at": "2011-08-09T05:54:40", "started_at": "2011-08-09T05:52:26", "current_state": "completed", "quest_id": 533}, {"username": "normal", "completed_at": "2012-06-11T19:16:31", "started_at": "2012-06-11T19:16:17", "current_state": "completed", "quest_id": 663}, {"username": "pox", "completed_at": "", "started_at": "2011-09-05T12:23:39", "current_state": "in_progress", "quest_id": 825}, {"username": "pox", "completed_at": "", "started_at": "2011-09-05T12:24:24", "current_state": "in_progress", "quest_id": 1258}, {"username": "tsalfie", "completed_at": "2011-12-08T20:15:57", "started_at": "2011-12-08T20:14:42", "current_state": "completed", "quest_id": 2393}];
+
+    // ---- parse / format the data ------------------
+    var usernames = [];
+
+    var inputDateFormat = d3.time.format.iso
+    attempts.forEach(function(d) {
+        // convert date strings to date objects
+        d['started_at']   = inputDateFormat.parse(d['started_at']);
+        d['completed_at'] = inputDateFormat.parse(d['completed_at']);
+
+        usernames.push(d['username']);
+    });
+
+    // get unique usernames
+    usernames = usernames.filter(function(value, index, self) { return self.indexOf(value) === index; });
+    //log(usernames);
+
+    // get date range
+    var dateRange = d3.extent(attempts, function (d) { return d.started_at; });
+    var sundayMin = d3.time.sunday.floor(dateRange[0]);
+    var sundayMax = d3.time.sunday.ceil(dateRange[1]);
+
+    var sundays = d3.time.sunday.range(sundayMin, sundayMax);
+    var sundayBins = sundays.slice(0);
+    sundayBins.push(sundayMax);
+
+    //log(dateRange);
+    //log([sundayMin, sundayMax]);
+    //log(sundays);
+    //log(sundayBins);
+
+    var numWeeks = sundays.length - 1;
+    //log(numWeeks);
+
+    width = numWeeks * axisSpacing;
+    totalWidth = width + margin.right + margin.left;
+
+    d3.select(".chart")
+        .style("height", totalHeight + "px");
+    d3.select(".chart svg")
+        .style("width", totalWidth + "px")
+        .style("height", totalHeight + "px");
+
+    // organize data by user {username: [d1, d2, d3, ...]}
+    var byUser = {};
+    usernames.forEach(function(d) { byUser[d] = []; });
+    attempts.forEach(function(d) { byUser[d.username].push(d); });
+    //log(byUser);
+
+    // create a histogram function to tally counts per week
+    var dateAccessor = function(d) { return d.started_at; }
+    var hist = d3.layout.histogram()
+        .value(dateAccessor)
+        .range(dateRange)
+        .bins(sundayBins);
+
+    var userHists = [];
+    var globalExtents = [1000, 0];  // min, max of all per-week attempts
+    for (var username in byUser) {
+        var h = hist(byUser[username]);
+        userHists.push({'username': username, 'hist': h});
+        var extents = d3.extent(h, function(d) { return d.length; });
+        if (extents[0] < globalExtents[0]) { globalExtents[0] = extents[0]; }
+        if (extents[1] > globalExtents[1]) { globalExtents[1] = extents[1]; }
+    }
+    log("userHists ----");
+    log(userHists);
+
+    var xScale = d3.time.scale()
+        .domain([sundays[0], sundays[sundays.length-1]])
+        .rangeRound([0, width]);
+
+    var yScale = d3.scale.linear()
+        .domain([-0.1, globalExtents[1] * 1.1])
+        .range([height, 0]);
+
+    var axisBrushes = [];
+    function brush(i) {
+        // clear all other brushes ... maybe
+
+        var brush = axisBrushes[i];
+        var extent = brush.extent();
+
+        var selectedUsernames = [];
+        userHists.forEach(function(d) {
+            var val = d.hist[i].y;
+            if (val >= extent[0] && val <= extent[1]) {
+                selectedUsernames.push(d.username);
+            }
+        });
+        //log(selectedUsernames);
+
+        var userList = d3.select("#userList").selectAll("li")
+            .data(selectedUsernames, String);
+
+        userList.enter().append("li").text(String);
+        userList.exit().remove();
+    }
+    sundays.forEach(function(d, i) {
+        function callBrush() { return brush(i); }
+        axisBrushes.push(
+            d3.svg.brush()
+              .y(yScale)
+              .on("brush", callBrush));
+    });
+
+    var axisFunc = d3.svg.axis()
+        .scale(yScale)
+        .tickValues(d3.range(0, globalExtents[1]+1))
+        .tickFormat(d3.format("d"))
+        .orient("left");
+
+    var axisArea = d3.select(".chart svg")
+        .append("g")
+        .attr("transform", "translate(" + margin.left + ", " + margin.top + ")");
+
+    var foreground = axisArea.append("g")
+        .attr("class", "foreground");
+
+    var xAxis = d3.svg.axis()
+        .scale(xScale)
+        .orient("bottom")
+        .tickValues(sundays)
+        .tickFormat(function(d) { return d3.time.format("%x")(d3.time.week.offset(d, 1)); });
+        // using an offset of 1 to set the labels to the end of the week
+        //  (the histogram data is binned/indexed to the beginning)
+
+    axisArea.append("g")
+        .attr("class", "xAxis")
+        .attr("transform", "translate(0, " + (height + 8) + ")")
+        .call(xAxis);
+
+    // add the week axes
+    var yAxes = axisArea.selectAll(".yAxis")
+        .data(sundays);
+
+    var yAxesEnter = yAxes.enter()
+        .append("g")
+        .attr("class", "yAxis")
+        .attr("transform", function(d) { return "translate(" + xScale(d) + ", 0)"; });
+
+    yAxesEnter.call(axisFunc);
+
+    // add brushes
+    yAxesEnter.append("g")
+        .attr("class", "brush")
+        .each(function(d, i) { d3.select(this).call(axisBrushes[i]); })
+        .selectAll("rect")
+        .attr("x", -7)
+        .attr("width", 14);
+
+    // add foreground paths
+    var pathFunc = d3.svg.line()
+        .x(function(d) { return xScale(d.x); })
+        .y(function(d) { return yScale(d.y); })
+        .interpolate("linear");
+
+    var foregroundPaths = foreground.selectAll("path")
+        .data(userHists);
+    foregroundPaths.enter()
+        .append("path")
+        .attr("d", function(d) { return pathFunc(d.hist); } );
+
+</script>
+
+    </body>
+</html>
